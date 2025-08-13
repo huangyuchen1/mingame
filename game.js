@@ -267,6 +267,9 @@ function init() {
     gameOver = false;
     timeElapsed = 0;
     lastShootTime = 0;
+    boss = null;
+    bossAppeared = false;
+    bossBullets = [];
     requestAnimationFrame(gameLoop);
 }
 
@@ -282,9 +285,15 @@ function updateBackground() {
 function update() {
     timeElapsed += 1 / 60;
     updateShootType();
+    // 控制射击类型
+    let now = performance.now();
+    if (now - lastShootTime > 150) {
+        shootByType(player.shootType);
+        lastShootTime = now;
+    }
     player.move();
     // Boss 出现逻辑
-    if (score >= 30 && !bossAppeared) {
+    if (score>0&&score % 20===0 && !bossAppeared) {
         boss = new Boss();
         bossAppeared = true;
         enemies = []; // 清空小怪
@@ -296,6 +305,7 @@ function update() {
         // 检测玩家子弹打 Boss
         bullets.forEach((bullet, bi) => {
             if (
+                boss &&
                 bullet.x < boss.x + boss.width &&
                 bullet.x + bullet.width > boss.x &&
                 bullet.y < boss.y + boss.height &&
@@ -307,8 +317,8 @@ function update() {
                 if (boss.hp <= 0) {
                     createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2);
                     boss = null;
-                    bossAppeared = false;
-                    // TODO: 这里可以设置游戏胜利逻辑
+                    bossAppeared = true;
+                    bossBullets = []; // 清空 Boss 子弹
                 }
             }
         });
@@ -334,12 +344,6 @@ function update() {
     } else {
         // 没有 Boss 才生成普通小怪
         if (Math.random() < 0.02) enemies.push(new Enemy());
-    }
-    // 控制射击类型
-    let now = performance.now();
-    if (now - lastShootTime > 150) {
-        shootByType(player.shootType);
-        lastShootTime = now;
     }
 
     bullets.forEach((bullet, i) => {
@@ -455,7 +459,7 @@ document.addEventListener("keyup", (e) => {
     if (e.key === "w" || e.key === "s") player.dy = 0; // 停止垂直方向移动
 });
 function updateShootType() {
-    if (score >= 25) player.shootType = 5; // 双层三排
+    if (score >= 25) player.shootType = 4; // 双层三排
     else if (score >= 20) player.shootType = 4; // 环形
     else if (score >= 15) player.shootType = 3; // 五连散射
     else if (score >= 10) player.shootType = 2; // 三排
