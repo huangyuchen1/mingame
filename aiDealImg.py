@@ -3,8 +3,8 @@ from PIL import Image
 import os
 
 # 输入文件路径
-input_path = "img/enemy-2.png"
-output_path = "img-py/enemy-2.png"
+input_path = "img/boss-2.png"
+output_path = "img-py/boss-2.png"
 
 # 读取图片
 img = Image.open(input_path)

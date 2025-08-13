@@ -20,21 +20,36 @@ let bgY1 = 0;
 let bgY2 = -canvas.height;
 let bgSpeed = 1.5;
 //手机页面操作
-let touchX = null;
+let touchStartX = null;
+let touchStartY = null;
 canvas.addEventListener("touchstart", (e) => {
-    touchX = e.touches[0].clientX;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
 });
 
 canvas.addEventListener("touchmove", (e) => {
     let currentX = e.touches[0].clientX;
-    let diff = currentX - touchX;
-    player.x += diff;
-    touchX = currentX;
+    let currentY = e.touches[0].clientY;
+    let diffX = currentX - touchStartX;
+    let diffY = currentY - touchStartY;
+
+    player.x += diffX;
+    player.y += diffY;
+
+    // 保证不超出边界
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+    if (player.y < 0) player.y = 0;
+    if (player.y + player.height > canvas.height) player.y = canvas.height - player.height;
+
+    touchStartX = currentX;
+    touchStartY = currentY;
 });
 
 canvas.addEventListener("touchend", () => {
-    touchX = null;
-});
+    touchStartX = null;
+    touchStartY = null;
+})
 // 玩家类
 class Player {
     constructor() {
@@ -48,7 +63,7 @@ class Player {
         this.image = new Image();
         this.image.src = "img-py/player-1.png";
         this.hp = 100;  // 玩家初始血量
-        this.shootType = 'three';  // 默认是三行并排射击
+        this.shootType = 0; // 射击模式编号  // 默认是三行并排射击
     }
 
     move() {
@@ -75,30 +90,6 @@ class Player {
         ctx.strokeStyle = "black";
         ctx.lineWidth = 2;
         ctx.strokeRect(canvas.width - 200, 30, 180, 20);  // 血条边框
-    }
-    shoot() {
-        const cx = this.x + this.width / 2 - 2;
-        const cy = this.y;
-
-        if (this.shootType === 'three') {
-            // 三行并排射击
-            bullets.push(new Bullet(cx, cy));
-            bullets.push(new Bullet(cx - 10, cy)); // 左边
-            bullets.push(new Bullet(cx + 10, cy)); // 右边
-        } else if (this.shootType === 'two') {
-            // 两行并排射击
-            bullets.push(new Bullet(cx, cy));
-            bullets.push(new Bullet(cx - 10, cy)); // 左边
-        } else if (this.shootType === 'circle') {
-            // 圆形子弹射击
-            const angleStep = Math.PI / 4; // 每45度发射一个子弹
-            for (let i = 0; i < 8; i++) {
-                const angle = angleStep * i;
-                const dx = Math.cos(angle) * 5;
-                const dy = Math.sin(angle) * 5;
-                bullets.push(new Bullet(cx, cy, dx, dy)); // 添加圆形子弹
-            }
-        }
     }
 }
 
@@ -163,6 +154,64 @@ class Enemy {
         ctx.fillRect(barX, barY, barWidth, barHeight);
         ctx.fillStyle = "lime";
         ctx.fillRect(barX, barY, (this.hp / this.maxHp) * barWidth, barHeight);
+    }
+}
+let boss = null;
+let bossBullets = [];
+let bossAppeared = false;
+
+// Boss 类
+class Boss {
+    constructor() {
+        this.width = 150;
+        this.height = 150;
+        this.x = canvas.width / 2 - this.width / 2;
+        this.y = 50;
+        this.speedX = 2;
+        this.maxHp = 100;
+        this.hp = this.maxHp;
+        this.image = new Image();
+        this.image.src = "img-py/boss-1.png"; // 需要准备一张 Boss 图片
+        this.lastShootTime = 0;
+    }
+
+    move() {
+        this.x += this.speedX;
+        if (this.x <= 0 || this.x + this.width >= canvas.width) {
+            this.speedX *= -1; // 碰到边界反向
+        }
+    }
+
+    shoot() {
+        let now = performance.now();
+        if (now - this.lastShootTime > 1000) { // 每 1 秒发射一波
+            for (let i = 0; i < 5; i++) {
+                let angle = Math.PI / 4 + (Math.random() - 0.5) * Math.PI / 2;
+                bossBullets.push(new Bullet(
+                    this.x + this.width / 2,
+                    this.y + this.height,
+                    Math.cos(angle) * 3,
+                    Math.sin(angle) * 3
+                ));
+            }
+            this.lastShootTime = now;
+        }
+    }
+
+    draw() {
+        ctx.drawImage(this.image, this.x, this.y, this.width, this.height);
+
+        // Boss 血条
+        let barWidth = 400;
+        let barHeight = 20;
+        let barX = canvas.width / 2 - barWidth / 2;
+        let barY = 20;
+        ctx.fillStyle = "red";
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        ctx.fillStyle = "lime";
+        ctx.fillRect(barX, barY, (this.hp / this.maxHp) * barWidth, barHeight);
+        ctx.strokeStyle = "black";
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
     }
 }
 
@@ -232,11 +281,64 @@ function updateBackground() {
 // 更新逻辑
 function update() {
     timeElapsed += 1 / 60;
+    updateShootType();
+    player.move();
+    // Boss 出现逻辑
+    if (score >= 30 && !bossAppeared) {
+        boss = new Boss();
+        bossAppeared = true;
+        enemies = []; // 清空小怪
+    }
+    if (boss) {
+        boss.move();
+        boss.shoot();
 
+        // 检测玩家子弹打 Boss
+        bullets.forEach((bullet, bi) => {
+            if (
+                bullet.x < boss.x + boss.width &&
+                bullet.x + bullet.width > boss.x &&
+                bullet.y < boss.y + boss.height &&
+                bullet.y + bullet.height > boss.y
+            ) {
+                boss.hp -= 1;
+                bullets.splice(bi, 1);
+
+                if (boss.hp <= 0) {
+                    createExplosion(boss.x + boss.width / 2, boss.y + boss.height / 2);
+                    boss = null;
+                    bossAppeared = false;
+                    // TODO: 这里可以设置游戏胜利逻辑
+                }
+            }
+        });
+
+        // 检测 Boss 子弹打到玩家
+        bossBullets.forEach((b, i) => {
+            b.move();
+            if (
+                b.x < player.x + player.width &&
+                b.x + b.width > player.x &&
+                b.y < player.y + player.height &&
+                b.y + b.height > player.y
+            ) {
+                player.hp -= 10;
+                bossBullets.splice(i, 1);
+                if (player.hp <= 0) gameOver = true;
+            }
+            // 超出屏幕移除
+            if (b.y > canvas.height || b.x < 0 || b.x > canvas.width) {
+                bossBullets.splice(i, 1);
+            }
+        });
+    } else {
+        // 没有 Boss 才生成普通小怪
+        if (Math.random() < 0.02) enemies.push(new Enemy());
+    }
     // 控制射击类型
     let now = performance.now();
     if (now - lastShootTime > 150) {
-        player.shoot();
+        shootByType(player.shootType);
         lastShootTime = now;
     }
 
@@ -245,7 +347,6 @@ function update() {
         if (bullet.y < 0) bullets.splice(i, 1);
     });
 
-    if (Math.random() < 0.02) enemies.push(new Enemy());
 
     enemies.forEach((enemy, ei) => {
         enemy.move();
@@ -312,6 +413,10 @@ function draw() {
         drawBackground();
         player.draw();
         bullets.forEach(b => b.draw());
+        if (boss) {
+            boss.draw();
+            bossBullets.forEach(b => b.draw());
+        }
         enemies.forEach(e => e.draw());
         particles.forEach(p => p.draw());
 
@@ -334,19 +439,11 @@ function gameLoop() {
 
 // 控制
 document.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowLeft") player.dx = -player.speed;
-    if (e.key === "ArrowRight") player.dx = player.speed;
-    if (e.key === "ArrowUp") player.dy = -player.speed; // 向上移动
-    if (e.key === "ArrowDown") player.dy = player.speed; // 向下移动
-    if (e.key === "1") {
-        player.shootType = 'three';  // 切换为三行并排
-    }
-    if (e.key === "2") {
-        player.shootType = 'two';  // 切换为两行并排
-    }
-    if (e.key === "3") {
-        player.shootType = 'circle';  // 切换为圆形子弹
-    }
+    console.log("检测到按键触发"+e.key);
+    if (e.key === "a") player.dx = -player.speed;
+    if (e.key === "d") player.dx = player.speed;
+    if (e.key === "w") player.dy = -player.speed; // 向上移动
+    if (e.key === "s") player.dy = player.speed; // 向下移动
     if (e.key === "r" || e.key === "R") {
         if (gameOver) {
             init();
@@ -354,8 +451,55 @@ document.addEventListener("keydown", (e) => {
     }
 });
 document.addEventListener("keyup", (e) => {
-    if (e.key === "ArrowLeft" || e.key === "ArrowRight") player.dx = 0;
-    if (e.key === "ArrowUp" || e.key === "ArrowDown") player.dy = 0; // 停止垂直方向移动
+    if (e.key === "a" || e.key === "d") player.dx = 0;
+    if (e.key === "w" || e.key === "s") player.dy = 0; // 停止垂直方向移动
 });
+function updateShootType() {
+    if (score >= 25) player.shootType = 5; // 双层三排
+    else if (score >= 20) player.shootType = 4; // 环形
+    else if (score >= 15) player.shootType = 3; // 五连散射
+    else if (score >= 10) player.shootType = 2; // 三排
+    else if (score >= 5) player.shootType = 1; // 双排
+    else player.shootType = 0; // 单排
+}
+function shootByType(type) {
+    const cx = player.x + player.width / 2 - 2;
+    const cy = player.y;
 
+    if (type === 0) {
+        bullets.push(new Bullet(cx, cy));
+    }
+    else if (type === 1) {
+        bullets.push(new Bullet(cx - 10, cy));
+        bullets.push(new Bullet(cx + 10, cy));
+    }
+    else if (type === 2) {
+        bullets.push(new Bullet(cx - 20, cy));
+        bullets.push(new Bullet(cx, cy));
+        bullets.push(new Bullet(cx + 20, cy));
+    }
+    else if (type === 3) {
+        bullets.push(new Bullet(cx, cy));
+        bullets.push(new Bullet(cx - 20, cy, -2, -5));
+        bullets.push(new Bullet(cx + 20, cy, 2, -5));
+        bullets.push(new Bullet(cx - 40, cy, -3, -4));
+        bullets.push(new Bullet(cx + 40, cy, 3, -4));
+    }
+    else if (type === 4) {
+        for (let i = 0; i < 12; i++) {
+            let angle = (Math.PI * 2 / 12) * i;
+            bullets.push(new Bullet(cx, cy, Math.cos(angle) * 4, Math.sin(angle) * 4));
+        }
+    }
+    else if (type === 5) {
+        // 上层
+        bullets.push(new Bullet(cx - 20, cy));
+        bullets.push(new Bullet(cx, cy));
+        bullets.push(new Bullet(cx + 20, cy));
+        // 下层
+        bullets.push(new Bullet(cx - 20, cy - 15));
+        bullets.push(new Bullet(cx, cy - 15));
+        bullets.push(new Bullet(cx + 20, cy - 15));
+    }
+}
 init();
