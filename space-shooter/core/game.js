@@ -41,12 +41,21 @@ export function gameLoop() {
         draw();
         requestAnimationFrame(gameLoop);
     } else {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
         ctx.fillStyle = "white";
-        ctx.font = "36px Arial";
-        ctx.fillText("游戏失败", canvas.width / 2 - 100, canvas.height / 2 - 50);
+        ctx.textAlign = "center";
+
+        ctx.font = "48px Arial";
+        ctx.fillText("💀 游戏失败 💀", canvas.width / 2, canvas.height / 2 - 100);
+
+        ctx.font = "28px Arial";
+        ctx.fillText(`最终得分: ${score}`, canvas.width / 2, canvas.height / 2 - 30);
+        ctx.fillText(`生存时间: ${timeElapsed.toFixed(1)} 秒`, canvas.width / 2, canvas.height / 2 + 10);
+
         ctx.font = "24px Arial";
-        ctx.fillText("按 R 键重新开始", canvas.width / 2 - 110, canvas.height / 2 + 20);
-    }
+        ctx.fillText("按 R 键重新开始", canvas.width / 2, canvas.height / 2 + 60);    }
 }
 
 function update() {
@@ -88,7 +97,7 @@ function update() {
             if (player.hp <= 0) gameOver = true;
         }
     });
-
+    //boss游戏逻辑
     if (boss) {
         boss.update();
         bullets.forEach((bullet, bi) => {
@@ -105,7 +114,7 @@ function update() {
         });
         boss.bullets.forEach((b, i) => {
             b.move();
-            if (checkCollision(player, b)) {
+            if (boss && checkCollision(player, b)) {
                 player.hp -= 20;
                 boss.bullets.splice(i, 1);
                 if (player.hp <= 0) gameOver = true;

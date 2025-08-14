@@ -1,4 +1,4 @@
-import { player, initGame } from "./game.js";
+import { player, initGame,gameLoop } from "./game.js";
 
 export function setupInput() {
     // 键盘
@@ -7,7 +7,12 @@ export function setupInput() {
         if (e.key === "d" || e.key === "D") player.dx = player.speed;
         if (e.key === "w" || e.key === "W") player.dy = -player.speed;
         if (e.key === "s" || e.key === "S") player.dy = player.speed;
-        if (e.key === "r" || e.key === "R") initGame();
+        if (e.key === "r" || e.key === "R")
+        {
+            console.info("重新开始触发...")
+            initGame();
+            gameLoop();
+        }
     });
 
     document.addEventListener("keyup", (e) => {

@@ -11,7 +11,7 @@ export class Boss {
         this.maxHp = 100;
         this.bullets = [];
         this.image = new Image();
-        this.image.src = "img/boss.png";
+        this.image.src = "img/boss-1.png";
         this.lastShootTime = 0;
     }
 
