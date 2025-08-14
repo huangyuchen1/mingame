@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JS 2D 魂斗罗（原型）</title>
+  <style>
+    :root { --bg:#0e0f13; --fg:#e8e8f0; --ui:#1b1e27; --accent:#48d; --danger:#e44; --ok:#3c6; }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, PingFang SC, Noto Sans SC, Helvetica, Arial}
+    #wrap{position:relative;height:100%;display:grid;grid-template-rows:auto 1fr}
+
+    header{display:flex;gap:12px;align-items:center;padding:10px 12px;background:linear-gradient(180deg,#161823,#0f1117);border-bottom:1px solid #222}
+    header h1{font-size:16px;margin:0 8px 0 0;letter-spacing:1px}
+    header .pill{padding:4px 8px;border-radius:999px;background:#131521;border:1px solid #202436;color:#a9b;}
+    header .btn{appearance:none;border:1px solid #2a2f43;background:#151828;color:#dfe; padding:6px 10px;border-radius:10px;cursor:pointer}
+    header .btn:hover{filter:brightness(1.1)}
+
+    #gameWrap{position:relative;overflow:hidden}
+    #game{display:block;width:100%;height:100%;background:linear-gradient(#0c1220,#060910);}
+
+    #hud{position:absolute;left:12px;top:12px;display:flex;gap:10px;align-items:center;padding:8px 10px;background:#0f1422aa;border:1px solid #2a3152;border-radius:12px;backdrop-filter: blur(4px)}
+    #hud .tag{padding:4px 8px;border-radius:8px;background:#12182a;border:1px solid #26304d}
+
+    #home{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#0a0d14dd,#070a10ee);}
+    #homeCard{width:min(680px,94vw);background:#0b0f19;border:1px solid #20273a;border-radius:16px;box-shadow:0 10px 40px #0006;padding:20px}
+    #homeCard h2{margin:0 0 10px}
+    #homeCard p{margin:6px 0;color:#bcc3d6}
+    #homeCard .kbd{display:inline-block;padding:2px 6px;border-radius:6px;background:#0e1322;border:1px solid #27314d;color:#cfe}
+    #homeCard .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px}
+    #homeCard button{flex:1 1 180px; padding:12px 16px;border-radius:12px;border:1px solid #2a2f43;background:#151828;color:#eff;cursor:pointer;font-weight:600}
+    #homeCard button.primary{background:linear-gradient(180deg,#2a6cff,#1a4dcc);border-color:#1f52d0}
+
+    #toast{position:absolute;right:12px;top:12px;display:none;padding:10px 12px;background:#121826;border:1px solid #26314b;border-radius:10px}
+
+    #pauseOverlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:#0007}
+    #pauseOverlay .card{background:#0b0f19;border:1px solid #20273a;padding:20px;border-radius:14px;text-align:center}
+
+    a.link{color:#7fb3ff;text-decoration:none}
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <h1>JS 2D 魂斗罗 · 原型</h1>
+    <span class="pill">单文件 · Canvas</span>
+    <button id="btnStart" class="btn">开始</button>
+    <button id="btnReset" class="btn">重置</button>
+    <button id="btnPause" class="btn">暂停/继续 (P)</button>
+    <span class="pill">移动: ← → / A D</span>
+    <span class="pill">跳跃: Z / K / 空格</span>
+    <span class="pill">射击: X / J</span>
+    <span class="pill">方向瞄准: ↑ ↓（可与左右组合）</span>
+  </header>
+
+  <div id="gameWrap">
+    <canvas id="game" width="1280" height="720"></canvas>
+    <div id="hud">
+      <span class="tag" id="tagLives">生命 x3</span>
+      <span class="tag" id="tagWeapon">武器：单发</span>
+      <span class="tag" id="tagScore">得分：0</span>
+      <span class="tag" id="tagTime">时间：0.0s</span>
+    </div>
+
+    <div id="home">
+      <div id="homeCard">
+        <h2>魂斗罗风格横版射击（原型）</h2>
+        <p>快速演示核心玩法：移动、跳跃、八方向射击、敌人 AI、平台碰撞、卷轴关卡、掉落击杀、武器升级与 Boss 战雏形。</p>
+        <p>推荐使用桌面浏览器运行，FPS 目标 60。代码纯原生 JS，无第三方库，便于二次开发。</p>
+        <p><strong>操作：</strong> <span class="kbd">← →</span> 或 <span class="kbd">A D</span> 移动，<span class="kbd">Z/K/空格</span> 跳跃，<span class="kbd">X/J</span> 射击，<span class="kbd">↑ ↓</span> 配合方向瞄准，<span class="kbd">P</span> 暂停。</p>
+        <div class="row">
+          <button class="primary" id="homeStart">开始游戏</button>
+          <button id="homeHow">如何扩展</button>
+          <button id="homeCredits">关于</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="pauseOverlay"><div class="card"><h3>暂停中</h3><p>按 <b>P</b> 或点击继续</p><button id="btnResume" class="btn">继续</button></div></div>
+
+    <div id="toast"></div>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>

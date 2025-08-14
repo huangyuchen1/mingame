@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>植物大战僵尸 - 第一关 (JS 单文件)</title>
+    <style>
+        :root {
+            --green:#6dbf4b; --dark:#22543d; --light:#e8ffe0; --panel:#f4f7fb;
+            --grid:#b7e3a1; --lane:#a7d989; --ui:#223; --accent:#ffcd00; --danger:#c0392b;
+        }
+        html,body{height:100%;}
+        body{
+            margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+            background:linear-gradient(180deg,#c8f7d4 0%, #a4e4b7 40%, #8fd1a6 100%);
+            color:#102a43; display:flex; align-items:center; justify-content:center; padding:16px;
+        }
+        .game-wrap{ width: 1024px; max-width: 100%; background:white; border-radius:18px; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.15); }
+        .topbar{ display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(--panel); border-bottom:1px solid #e6ecf5; }
+        .title{ font-weight:800; letter-spacing:.5px; color:var(--dark); }
+        #sunCount{ font-weight:800; background:var(--accent); color:#4d3900; padding:4px 10px; border-radius:999px; }
+        .btn{ appearance:none; border:0; background:var(--dark); color:white; padding:8px 14px; border-radius:12px; cursor:pointer; font-weight:700; box-shadow:0 6px 16px rgba(34,84,61,.25); }
+        .btn[disabled]{opacity:.5; cursor:not-allowed;}
+        .cards{ display:flex; gap:10px; margin-left:auto; }
+        .card{ width:120px; border-radius:14px; border:2px solid #d9e6f1; background:white; padding:8px; cursor:pointer; position:relative; user-select:none; }
+        .card.selected{ outline:3px solid #226; box-shadow:0 6px 18px rgba(34,34,102,.15); }
+        .card .name{ font-weight:800; }
+        .card .cost{ position:absolute; right:8px; top:8px; font-weight:900; background:var(--accent); color:#4d3900; padding:2px 6px; border-radius:10px; font-size:12px; }
+        .card .emoji{ font-size:28px; }
+        .layout{ display:grid; grid-template-columns: 1fr 300px; }
+        .right{ border-left:1px solid #e6ecf5; background:#fbfcff; padding:12px; }
+        .panel{ background:white; border:1px solid #e9eef6; border-radius:12px; padding:12px; box-shadow:0 4px 12px rgba(0,0,0,.05); }
+        .row{ display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
+        progress{ width:100%; height:14px; }
+
+        /* Board */
+        #board{ position:relative; aspect-ratio: 16/9; background: linear-gradient(180deg, var(--grid) 0%, var(--lane) 100%); }
+        canvas{ width:100%; height:100%; display:block; }
+        .grid-lines{ position:absolute; inset:0; pointer-events:none; }
+        .grid-lines>div{ position:absolute; left:0; right:0; height:1px; background:rgba(0,0,0,.06); }
+        .msg{position:absolute; inset:0; display:none; align-items:center; justify-content:center; font-weight:900; font-size:42px; backdrop-filter:blur(2px);}
+        .msg.show{display:flex;}
+        .mowers{ position:absolute; left:0; top:0; bottom:0; width:30px; pointer-events:none; }
+        .mower{ position:absolute; width:26px; height:26px; left:2px; border-radius:6px; background:#f33; box-shadow:inset 0 -2px 0 rgba(0,0,0,.2), 0 2px 6px rgba(0,0,0,.3); }
+    </style>
+</head>
+<body>
+<div class="game-wrap">
+    <div class="topbar">
+        <div class="title">🌻 植物大战僵尸 — 第一关</div>
+        <div>☀️ 阳光：<span id="sunCount">50</span></div>
+        <button id="startBtn" class="btn">开始游戏</button>
+        <div class="cards">
+            <div class="card" data-plant="Sunflower" title="向日葵：持续产阳光">
+                <div class="cost">50</div>
+                <div class="emoji">🌻</div>
+                <div class="name">向日葵</div>
+                <div class="desc" style="font-size:12px;color:#444">每7秒+25阳光</div>
+            </div>
+            <div class="card" data-plant="Peashooter" title="豌豆射手：攻击僵尸">
+                <div class="cost">100</div>
+                <div class="emoji">🌿</div>
+                <div class="name">豌豆射手</div>
+                <div class="desc" style="font-size:12px;color:#444">每1.5秒发射豌豆</div>
+            </div>
+            <div class="card" data-plant="Wallnut" title="坚果墙：高血量防御">
+                <div class="cost">50</div>
+                <div class="emoji">🥜</div>
+                <div class="name">坚果墙</div>
+                <div class="desc" style="font-size:12px;color:#444">高耐久护盾</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="layout">
+        <div id="board" class="panel">
+            <canvas id="game" width="960" height="540"></canvas>
+            <div class="grid-lines" id="gridLines"></div>
+            <div class="mowers" id="mowers"></div>
+            <div class="msg" id="msg"></div>
+        </div>
+        <div class="right">
+            <div class="panel">
+                <div class="row"><strong>关卡目标：</strong><span>守住5条草地，消灭所有僵尸</span></div>
+                <div class="row"><span>波次进度</span><progress id="waveProgress" value="0" max="1"></progress></div>
+                <div class="row"><span>提示</span><span style="font-size:12px;color:#666">选中卡片后点击草地格子种植。点击飘落的☀️收集阳光。</span></div>
+                <div class="row"><button id="restartBtn" class="btn">重新开始</button></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ===== 基础设置 =====
+    const ROWS = 5, COLS = 9, CELL_W = 960/COLS, CELL_H = 540/ROWS;
+    const ctx = document.getElementById('game').getContext('2d');
+    const board = document.getElementById('board');
+    const sunEl = document.getElementById('sunCount');
+    const msgEl = document.getElementById('msg');
+    const waveProgress = document.getElementById('waveProgress');
+    const mowerEl = document.getElementById('mowers');
+
+    const state = {
+        sun: 50,
+        selected: null,
+        running: false,
+        lastFrame: 0,
+        entities: [],
+        plants: [],
+        zombies: [],
+        peas: [],
+        suns: [],
+        mowers: [],
+        spawnTimer: 0,
+        skySunTimer: 0,
+        totalZombies: 12,
+        spawned: 0,
+        defeated: 0,
+        gameOver: false,
+        win: false
+    };
+
+    function reset() {
+        state.sun = 50; state.selected = null; state.running=false; state.lastFrame=0;
+        state.entities=[]; state.plants=[]; state.zombies=[]; state.peas=[]; state.suns=[]; state.spawnTimer=0; state.skySunTimer=0;
+        state.spawned=0; state.defeated=0; state.gameOver=false; state.win=false;
+        waveProgress.value = 0; sunEl.textContent = state.sun;
+        msgEl.classList.remove('show'); msgEl.textContent='';
+        // 生成割草机
+        mowerEl.innerHTML = '';
+        state.mowers = [];
+        for(let r=0;r<ROWS;r++){
+            const m = document.createElement('div');
+            m.className='mower'; m.style.top = (r*CELL_H + CELL_H/2 - 13) + 'px';
+            mowerEl.appendChild(m);
+            state.mowers.push({row:r, x:0, active:false, used:false, speed:420});
+        }
+    }
+
+    reset();
+
+    // 绘制网格辅助线
+    const gridLines = document.getElementById('gridLines');
+    function drawGridLines(){
+        gridLines.innerHTML='';
+        for(let r=1;r<ROWS;r++){
+            const line=document.createElement('div');
+            line.style.top = (r*CELL_H)+'px';
+            gridLines.appendChild(line);
+        }
+    }
+    drawGridLines();
+
+    // ===== 植物定义 =====
+    const Plants = {
+        Sunflower: {
+            name:'向日葵', cost:50, hp:200, emoji:'🌻',
+            placeable:true,
+            onTick(p,dt){ p.timer=(p.timer||0)+dt; if(p.timer>7000){ p.timer=0; spawnSun(p.x+CELL_W/2, p.y+20, 25, true); } },
+            draw(p){ drawPlantBase(p,'#ffde59'); drawEmoji(p,'🌻'); }
+        },
+        Peashooter: {
+            name:'豌豆射手', cost:100, hp:220, emoji:'🌿',
+            onTick(p,dt){ p.timer=(p.timer||0)+dt; const hasZombieAhead = state.zombies.some(z=>z.row===p.row && z.x>p.x);
+                if(hasZombieAhead && p.timer>1500){ p.timer=0; spawnPea(p.x+CELL_W-10, p.y+CELL_H/2-8, p.row); }
+            },
+            draw(p){ drawPlantBase(p,'#66bb6a'); drawEmoji(p,'🌿'); }
+        },
+        Wallnut: {
+            name:'坚果墙', cost:50, hp:900, emoji:'🥜',
+            onTick(p,dt){ },
+            draw(p){ drawPlantBase(p,'#d2a679'); drawEmoji(p,'🥜'); }
+        }
+    };
+
+    function drawPlantBase(p,color){
+        const x=p.x+10,y=p.y+10,w=CELL_W-20,h=CELL_H-20;
+        roundRect(x,y,w,h,12,color,'#1b5e20');
+        // HP 条
+        ctx.fillStyle='#0003'; ctx.fillRect(x,y-6,w,4); ctx.fillStyle='#2ecc71';
+        ctx.fillRect(x,y-6,w*(p.hp/p.maxHp),4);
+    }
+    function drawEmoji(p,emoji){ ctx.font='28px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(emoji, p.x+CELL_W/2, p.y+CELL_H/2); }
+
+    function spawnPlant(kind, col, row){
+        const def = Plants[kind]; if(!def) return;
+        const x = col*CELL_W, y=row*CELL_H;
+        // 检查是否已有植物
+        if(state.plants.some(pl=>pl.col===col && pl.row===row)) return;
+        if(state.sun < def.cost) return;
+        state.sun -= def.cost; sunEl.textContent = state.sun;
+        const plant = {kind, col,row,x,y, hp:def.hp, maxHp:def.hp, timer:0};
+        state.plants.push(plant);
+    }
+
+    // ===== 僵尸 =====
+    function spawnZombie(){
+        const row = Math.floor(Math.random()*ROWS);
+        const z = { row, x:960+Math.random()*100, y: row*CELL_H, w:60, h:80, hp:240, speed:18, eating:false, eatTimer:0, dmg:12 };
+        state.zombies.push(z);
+        state.spawned++;
+    }
+
+    // ===== 豌豆 & 阳光 =====
+    function spawnPea(x,y,row){ state.peas.push({x,y,row, speed:220, r:6}); }
+    function spawnSun(x,y,value=25, drop=false){
+        const s = {x,y, r:16, value, vy: drop? 50 : 0, life: 10000};
+        state.suns.push(s);
+    }
+    // 天空掉落阳光
+    function skySun(){
+        const col = Math.floor(Math.random()*COLS);
+        spawnSun(col*CELL_W + CELL_W/2, -10, 25, true);
+    }
+
+    // ===== 输入 =====
+    const cards = document.querySelectorAll('.card');
+    cards.forEach(card=>{
+        card.addEventListener('click',()=>{
+            cards.forEach(c=>c.classList.remove('selected'));
+            card.classList.add('selected');
+            state.selected = card.dataset.plant;
+        });
+    });
+
+    document.getElementById('startBtn').onclick=()=>{ if(!state.running){ startGame(); } };
+    document.getElementById('restartBtn').onclick=()=>{ reset(); startGame(true); };
+
+    board.addEventListener('click', (e)=>{
+        if(!state.running) return;
+        const rect = board.getBoundingClientRect();
+        const bx = (e.clientX-rect.left) * (960/rect.width);
+        const by = (e.clientY-rect.top) * (540/rect.height);
+
+        // 先检测是否点中了阳光
+        for(let i=state.suns.length-1;i>=0;i--){
+            const s = state.suns[i];
+            const dx=bx-s.x, dy=by-s.y; if(dx*dx+dy*dy <= (s.r+8)*(s.r+8)){
+                state.sun += s.value; sunEl.textContent=state.sun; state.suns.splice(i,1); return;
+            }
+        }
+
+        if(!state.selected) return;
+        const col = Math.floor(bx/CELL_W), row = Math.floor(by/CELL_H);
+        spawnPlant(state.selected, col, row);
+    });
+
+    // ===== 主循环 =====
+    function startGame(restarting=false){
+        state.running=true; state.lastFrame=performance.now();
+        msgEl.classList.remove('show');
+        if(!restarting){
+            // 初始奖励阳光
+            spawnSun(100,80,25,false); spawnSun(200,160,25,false);
+        }
+        requestAnimationFrame(loop);
+    }
+
+    function loop(t){
+        if(!state.running) return;
+        const dt = Math.min(50, t - state.lastFrame); // ms
+        state.lastFrame = t;
+        update(dt);
+        render();
+        if(state.running) requestAnimationFrame(loop);
+    }
+
+    function update(dt){
+        if(state.gameOver) return;
+
+        // 波次：每2~3秒生成一个，直到 totalZombies
+        state.spawnTimer += dt;
+        if(state.spawned < state.totalZombies && state.spawnTimer > 2000 + Math.random()*1000){
+            state.spawnTimer = 0; spawnZombie();
+        }
+
+        // 天空阳光
+        state.skySunTimer += dt;
+        if(state.skySunTimer > 7000){ state.skySunTimer=0; skySun(); }
+
+        // 更新阳光
+        for(let i=state.suns.length-1;i>=0;i--){
+            const s = state.suns[i];
+            s.life -= dt; if(s.vy) s.y += s.vy*dt/1000; if(s.y>520) { s.vy=0; }
+            if(s.life<=0){ state.suns.splice(i,1); }
+        }
+
+        // 更新植物
+        state.plants.forEach(p=>{
+            Plants[p.kind].onTick && Plants[p.kind].onTick(p, dt);
+        });
+
+        // 更新豌豆
+        for(let i=state.peas.length-1;i>=0;i--){
+            const pea = state.peas[i]; pea.x += pea.speed*dt/1000;
+            // 碰撞僵尸
+            for(let j=state.zombies.length-1;j>=0;j--){
+                const z = state.zombies[j];
+                if(z.row===pea.row && pea.x>z.x && pea.x<z.x+40){
+                    z.hp -= 28; state.peas.splice(i,1); break;
+                }
+            }
+            if(pea && pea.x>980){ state.peas.splice(i,1); }
+        }
+
+        // 更新僵尸
+        for(let i=state.zombies.length-1;i>=0;i--){
+            const z = state.zombies[i];
+            // 和植物接触？
+            const plant = state.plants.find(p=>p.row===z.row && (p.x+10) < (z.x+z.w) && (p.x+CELL_W-10) > z.x);
+            if(plant){
+                z.eating = true; z.eatTimer = (z.eatTimer||0) + dt; if(z.eatTimer>500){ z.eatTimer=0; plant.hp -= z.dmg; }
+                if(plant.hp<=0){ state.plants = state.plants.filter(p=>p!==plant); z.eating=false; }
+            } else {
+                z.eating = false; z.x -= z.speed*dt/1000;
+            }
+
+            // 接触割草机
+            const mower = state.mowers[z.row];
+            if(!mower.used && !mower.active && z.x < 30){ mower.active=true; mowerEl.children[z.row].style.background='#ff6b6b'; }
+            if(mower.active){ mower.x += mower.speed*dt/1000; // 碰撞
+                for(let k=state.zombies.length-1;k>=0;k--){ const zz=state.zombies[k]; if(zz.row===mower.row && zz.x < mower.x+40){ state.zombies.splice(k,1); state.defeated++; } }
+                if(mower.x>1000){ mower.active=false; mower.used=true; mowerEl.children[z.row].style.opacity=.3; }
+            }
+
+            if(z.x < -20){ // 到家了
+                gameOver(false);
+            }
+            if(z.hp<=0){ state.zombies.splice(i,1); state.defeated++; }
+        }
+
+        // 胜利条件
+        waveProgress.value = state.defeated / state.totalZombies;
+        if(state.defeated >= state.totalZombies && state.zombies.length===0 && !state.win){
+            gameOver(true);
+        }
+    }
+
+    function render(){
+        ctx.clearRect(0,0,960,540);
+        // 草坪格子
+        for(let r=0;r<ROWS;r++){
+            for(let c=0;c<COLS;c++){
+                const x=c*CELL_W, y=r*CELL_H;
+                ctx.strokeStyle='rgba(0,0,0,.05)'; ctx.strokeRect(x+0.5,y+0.5,CELL_W-1,CELL_H-1);
+            }
+        }
+
+        // 画植物
+        state.plants.forEach(p=>{ Plants[p.kind].draw(p); });
+
+        // 画豌豆
+        ctx.fillStyle='#2ecc71';
+        state.peas.forEach(pea=>{ ctx.beginPath(); ctx.arc(pea.x, pea.y, pea.r, 0, Math.PI*2); ctx.fill(); });
+
+        // 画僵尸
+        state.zombies.forEach(z=>{
+            // 身体
+            roundRect(z.x, z.y+10, 40, CELL_H-20, 10, '#8e8e8e', '#333');
+            // 头
+            roundRect(z.x+6, z.y+4, 28, 24, 8, '#d9d9d9', '#333');
+            // 嘴
+            ctx.fillStyle='#333'; ctx.fillRect(z.x+12, z.y+22, 16, 4);
+            // 状态
+            if(z.eating){ ctx.font='12px system-ui'; ctx.fillText('😬', z.x+20, z.y+14); }
+        });
+
+        // 阳光
+        state.suns.forEach(s=>{
+            ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+            ctx.fillStyle = '#ffdf5d'; ctx.fill(); ctx.strokeStyle='#f1b000'; ctx.lineWidth=2; ctx.stroke();
+            ctx.font='12px system-ui'; ctx.textAlign='center'; ctx.fillStyle='#5a4100'; ctx.fillText('☀️', s.x, s.y+4);
+        });
+    }
+
+    function gameOver(win){
+        state.running=false; state.gameOver=true; state.win=win;
+        msgEl.textContent = win ? '胜利！🎉' : '失败了… 🧟‍♂️';
+        msgEl.classList.add('show');
+    }
+
+    // ===== 绘图辅助 =====
+    function roundRect(x,y,w,h,r, fill, stroke){
+        ctx.beginPath();
+        ctx.moveTo(x+r,y);
+        ctx.arcTo(x+w,y,x+w,y+h,r);
+        ctx.arcTo(x+w,y+h,x,y+h,r);
+        ctx.arcTo(x,y+h,x,y,r);
+        ctx.arcTo(x,y,x+w,y,r);
+        if(fill){ ctx.fillStyle=fill; ctx.fill(); }
+        if(stroke){ ctx.strokeStyle=stroke; ctx.stroke(); }
+    }
+
+    // ===== 初始化 =====
+    // 自动选择第一张卡
+    document.querySelector('.card[data-plant="Sunflower"]').click();
+
+</script>
+</body>
+</html>
