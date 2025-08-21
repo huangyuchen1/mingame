@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>2D 横板拳王 - JS Demo</title>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --ui: #141a32;
+            --accent: #61dafb;
+            --good: #2ecc71;
+            --warn: #f39c12;
+            --bad: #e74c3c;
+            --white: #e9f0ff;
+        }
+        html,body{height:100%;}
+        body{
+            margin:0; background:
+                radial-gradient(1200px 600px at 50% -20%, #1c2655 0%, transparent 60%),
+                radial-gradient(900px 400px at 10% 120%, #12214a 0%, transparent 60%),
+                var(--bg);
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+            color: var(--white);
+            display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px;
+        }
+        .wrap{position:relative; width:min(960px, 96vw);}
+        canvas{width:100%; height:auto; background:
+                linear-gradient(#20355e, #162847 60%, #0d1830);
+            box-shadow: 0 20px 60px rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.05);
+            border-radius: 16px;
+            display:block;
+        }
+        .hud{position:absolute; inset:0; pointer-events:none; padding:14px;}
+        .row{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+        .bar{height:18px; background:#2a335f; border-radius:10px; overflow:hidden; flex:1; box-shadow: inset 0 2px 6px rgba(0,0,0,.4);}
+        .bar .fill{height:100%; background: linear-gradient(90deg, var(--good), #27ae60); width:100%; transition:width .15s ease;}
+        .bar.bad .fill{background:linear-gradient(90deg, var(--warn), var(--bad));}
+        .tag{background:rgba(255,255,255,.08); padding:6px 10px; border-radius:999px; font-weight:600; letter-spacing:.5px;}
+        .controls{max-width:min(960px, 96vw); font-size:14px; line-height:1.6; opacity:.95;}
+        kbd{background:#0f1933; padding:2px 6px; border:1px solid rgba(255,255,255,.1); border-bottom-width:2px; border-radius:6px; font-weight:700; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;}
+        .btns{display:flex; gap:8px;}
+        button{all:unset; background:linear-gradient(180deg,#1a2450,#0e1633); border:1px solid rgba(255,255,255,.12); padding:10px 14px; border-radius:10px; cursor:pointer; user-select:none; box-shadow:0 10px 20px rgba(0,0,0,.35);}
+        button:hover{filter:brightness(1.1);} button:active{transform:translateY(1px);}
+        .toast{position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#0f1933; border:1px solid rgba(255,255,255,.12); padding:10px 14px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.45);}
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <canvas id="game" width="960" height="540" aria-label="2D 横板拳王"></canvas>
+    <div class="hud" aria-hidden>
+        <div class="row">
+            <div class="tag">P1</div>
+            <div class="bar" style="margin-right:8px"><div id="hp1" class="fill"></div></div>
+            <div class="tag" id="timer">99</div>
+            <div class="bar bad" style="margin-left:8px"><div id="hp2" class="fill"></div></div>
+            <div class="tag">CPU</div>
+        </div>
+    </div>
+</div>
+<div class="controls">
+    <div class="btns">
+        <button id="btnPause">暂停 / 继续</button>
+        <button id="btnReset">重新开始</button>
+        <button id="btnSlow">子弹时间</button>
+    </div>
+    <p>
+        操作：移动 <kbd>A</kbd>/<kbd>D</kbd>，跳跃 <kbd>W</kbd>，下蹲 <kbd>S</kbd>；
+        防御 <kbd>左Shift</kbd>；轻拳 <kbd>J</kbd>，重脚 <kbd>K</kbd>，必杀（投射波）<kbd>L</kbd>。
+        方向 + 攻击可触发不同判定（如 <kbd>↓</kbd>+<kbd>J</kbd> 下段）。
+    </p>
+</div>
+<div id="toast" class="toast" style="display:none">准备，FIGHT!</div>
+
+<script>
+    // ===================== 基础工具 =====================
+    const rand = (a,b)=>Math.random()*(b-a)+a;
+    const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+
+    // ===================== 游戏常量 =====================
+    const WORLD = { w: 960, h: 540, floor: 460 };
+    const GRAVITY = 0.9;
+    const FRICTION = 0.85;
+    const DT_BASE = 1/60; // 60 FPS baseline
+
+    // ===================== 输入 =====================
+    const keys = new Set();
+    const once = new Set();
+    addEventListener('keydown', e=>{ if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) e.preventDefault(); keys.add(e.key.toLowerCase()); });
+    addEventListener('keyup', e=>{ keys.delete(e.key.toLowerCase()); once.delete(e.key.toLowerCase()); });
+    const justPressed = k=> keys.has(k) && !once.has(k) && (once.add(k),true);
+
+    // ===================== 角色类 =====================
+    class Fighter {
+        constructor(opts){ Object.assign(this,{
+            name:'P', x:200, y:0, w:44, h:84, dir:1,
+            vx:0, vy:0, speed:5, jump:16,
+            color:'#58a6ff',
+            state:'idle', timer:0, hp:100, maxhp:100,
+            block:false, crouch:false, canAct:true,
+            combo:0, comboTimer:0,
+        }, opts); this.spawnY = WORLD.floor - this.h; this.y = this.spawnY; }
+
+        get feet(){ return this.y + this.h; }
+        get centerX(){ return this.x + this.w/2; }
+
+        face(target){ this.dir = this.centerX < target.centerX ? 1 : -1; }
+
+        applyPhysics(dt){
+            this.vy += GRAVITY * dt * 60;
+            this.x += this.vx * dt * 60;
+            this.y += this.vy * dt * 60;
+
+            // 地面与边界
+            if(this.feet >= WORLD.floor){ this.y = WORLD.floor - this.h; this.vy = 0; if(this.state==='jump') this.toState('idle'); }
+            this.x = clamp(this.x, 10, WORLD.w - this.w - 10);
+
+            // 摩擦
+            if(this.feet >= WORLD.floor) this.vx *= FRICTION;
+        }
+
+        toState(s, t=0){ this.state = s; this.timer = t; }
+
+        get hurtbox(){ return {x:this.x, y:this.y, w:this.w, h:this.h}; }
+
+        makeHitbox(def){
+            const {ox, oy, w, h, dmg=8, stun=16, kbX=5, kbY=6, guard='mid', prio=1} = def;
+            return { owner:this, x:this.x + (this.dir===1?ox:-ox-w), y:this.y + oy, w, h, dmg, stun, kbX:kbX*this.dir, kbY, guard, prio, alive:true };
+        }
+
+        update(player, enemy, game, dt){
+            // 面向
+            this.face(enemy);
+
+            // 计时
+            if(this.comboTimer>0) this.comboTimer -= dt;
+            else this.combo = 0;
+
+            // 可行动时处理输入/AI
+            if(this.canAct){
+                if(this.controller){ this.controller(this, enemy, game, dt); }
+            }
+
+            // 状态计时
+            if(this.timer>0){ this.timer -= dt*60; if(this.timer<=0){ this.timer=0; this.onEndState?.(); } }
+
+            this.applyPhysics(dt);
+        }
+
+        // 受击
+        takeHit(hit, isBlocked){
+            if(this.state==='ko') return;
+            const eff = isBlocked ? 0.25 : 1;
+            const dmg = Math.round(hit.dmg * eff);
+            this.hp = clamp(this.hp - dmg, 0, this.maxhp);
+
+            if(this.hp<=0){ this.toState('ko'); this.canAct=false; this.vx = -hit.kbX*0.4; this.vy = -4; return; }
+
+            // 硬直/击退
+            this.vx = hit.kbX * (isBlocked?0.3:1);
+            this.vy = -hit.kbY * (isBlocked?0.2:1);
+            this.toState(isBlocked?'guardStun':'hitstun', isBlocked?10:16);
+            this.canAct = false;
+            this.onEndState = ()=>{ this.canAct=true; this.toState('idle'); };
+        }
+    }
+
+    // ===================== 攻击管理 =====================
+    const activeHitboxes = [];
+    function rectOverlap(a,b){ return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y; }
+
+    function spawnHitbox(h){ activeHitboxes.push(h); }
+
+    function processHits(p1, p2, game){
+        // 简易优先级处理
+        for(const hb of activeHitboxes){ if(!hb.alive) continue; const victim = hb.owner===p1? p2 : p1; if(rectOverlap(hb, victim.hurtbox)){
+            const blocking = victim.block && (hb.guard!=='low' || victim.crouch) && ((victim.dir===1 && keys.has('shift')) || (victim.dir===-1 && keys.has('shift')));
+            victim.takeHit(hb, blocking);
+            game.spark(hb.x + hb.w/2, hb.y + hb.h/2);
+            game.shake = 6;
+            hb.alive=false;
+            hb.owner.combo += 1; hb.owner.comboTimer = 1.2;
+        }
+        }
+        // 清理
+        for(let i=activeHitboxes.length-1;i>=0;i--) if(!activeHitboxes[i].alive) activeHitboxes.splice(i,1);
+    }
+
+    // ===================== 游戏对象 =====================
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const ui = { hp1:document.getElementById('hp1'), hp2:document.getElementById('hp2'), timer:document.getElementById('timer') };
+    const toast = document.getElementById('toast');
+    function showToast(msg, ms=1200){ toast.textContent=msg; toast.style.display='block'; clearTimeout(showToast.t); showToast.t=setTimeout(()=>toast.style.display='none', ms); }
+
+    const game = {
+        t:0, slow:1, pause:false, roundTime:99, shake:0, sparks:[], projectiles:[],
+        reset(){
+            this.t=0; this.slow=1; this.pause=false; this.roundTime=99; this.shake=0; this.sparks=[]; this.projectiles=[]; activeHitboxes.length=0;
+            p1 = new Fighter({ name:'P1', x:220, color:'#6bd1ff'});
+            p2 = new Fighter({ name:'CPU', x: WORLD.w-220-44, color:'#ff6b6b'});
+            p1.controller = playerController;
+            p2.controller = cpuController;
+            showToast('准备，FIGHT!', 1200);
+        },
+        spark(x,y){ this.sparks.push({x,y, r:2, life:14}); },
+    };
+
+    // ===================== 控制器 =====================
+    function playerController(self, enemy, game, dt){
+        // 姿态
+        self.crouch = keys.has('s');
+        self.block = keys.has('shift');
+
+        if(self.state==='idle' || self.state==='walk'){
+            // 移动
+            if(keys.has('a')){ self.vx = -self.speed; self.toState('walk'); }
+            else if(keys.has('d')){ self.vx = self.speed; self.toState('walk'); }
+            else { self.toState('idle'); }
+
+            // 跳跃
+            if(justPressed('w') && self.feet>=WORLD.floor){ self.vy = -self.jump; self.toState('jump'); }
+
+            // 轻拳（中段）
+            if(justPressed('j')){ self.toState('light', 10); self.canAct=false; self.onEndState=()=>{self.canAct=true; self.toState('idle');};
+                const hb = self.makeHitbox({ox: self.w-4, oy: 20, w:26, h:22, dmg:8, stun:12, kbX:6, kbY:5, guard:'mid'});
+                setTimeout(()=> spawnHitbox(hb), 70); setTimeout(()=> hb.alive=false, 160);
+            }
+
+            // 重脚（远程判定，下段 if 按住下）
+            if(justPressed('k')){ const isLow=self.crouch; self.toState('heavy', 16); self.canAct=false; self.onEndState=()=>{self.canAct=true; self.toState('idle');};
+                const hb = self.makeHitbox({ox:self.w-2, oy: isLow? (self.h-26) : 34, w:36, h:isLow?18:24, dmg:14, stun:18, kbX:8, kbY:7, guard: isLow?'low':'mid'});
+                setTimeout(()=> spawnHitbox(hb), 100); setTimeout(()=> hb.alive=false, 220);
+            }
+
+            // 必杀：能量波（投射物）
+            if(justPressed('l')){ self.toState('special', 18); self.canAct=false; self.onEndState=()=>{self.canAct=true; self.toState('idle');};
+                setTimeout(()=>{
+                    game.projectiles.push({ owner:self, x:self.x + (self.dir===1? self.w : -12), y:self.y+30, w:12, h:12, vx: 9*self.dir, life:180 });
+                }, 120);
+            }
+        }
+    }
+
+    function cpuController(self, enemy, game, dt){
+        const dist = Math.abs(self.centerX - enemy.centerX);
+        self.crouch = false; self.block=false;
+        if(self.state!=='idle' && self.state!=='walk') return;
+
+        // 简易 AI：接近玩家
+        if(dist>140){ self.vx = (enemy.centerX>self.centerX?1:-1) * (self.speed*0.8); self.toState('walk'); }
+        else { self.vx=0; self.toState('idle'); }
+
+        // 随机跳跃
+        if(Math.random()<0.005 && self.feet>=WORLD.floor){ self.vy = -self.jump; self.toState('jump'); }
+
+        // 攻击时机
+        if(dist<90 && Math.random()<0.02){ // 轻拳
+            self.toState('light', 10); self.canAct=false; self.onEndState=()=>{self.canAct=true; self.toState('idle');};
+            const hb = self.makeHitbox({ox: self.w-4, oy: 20, w:26, h:22, dmg:7, stun:12, kbX:5, kbY:5, guard:'mid'});
+            setTimeout(()=> spawnHitbox(hb), 70); setTimeout(()=> hb.alive=false, 160);
+        }
+        if(dist<120 && Math.random()<0.012){ // 重脚
+            const isLow = Math.random()<0.4;
+            self.toState('heavy', 16); self.canAct=false; self.onEndState=()=>{self.canAct=true; self.toState('idle');};
+            const hb = self.makeHitbox({ox:self.w-2, oy: isLow? (self.h-26) : 34, w:36, h:isLow?18:24, dmg:12, stun:18, kbX:7, kbY:6, guard: isLow?'low':'mid'});
+            setTimeout(()=> spawnHitbox(hb), 100); setTimeout(()=> hb.alive=false, 220);
+        }
+        if(Math.random()<0.008){ // 投射
+            self.toState('special', 18); self.canAct=false; self.onEndState=()=>{self.canAct=true; self.toState('idle');};
+            setTimeout(()=>{ game.projectiles.push({ owner:self, x:self.x + (self.dir===1? self.w : -12), y:self.y+30, w:12, h:12, vx: 8*self.dir, life:180 }); }, 120);
+        }
+    }
+
+    // ===================== 渲染 =====================
+    function drawGround(){
+        // 远景层
+        ctx.save();
+        // 地平线雾
+        const grd = ctx.createLinearGradient(0, WORLD.floor-40, 0, WORLD.h);
+        grd.addColorStop(0, 'rgba(0,0,0,0)');
+        grd.addColorStop(1, 'rgba(0,0,0,0.35)');
+        ctx.fillStyle = grd; ctx.fillRect(0, WORLD.floor-40, WORLD.w, WORLD.h);
+
+        // 地砖
+        for(let i=0;i<16;i++){
+            ctx.fillStyle = i%2? '#1a2a52' : '#152248';
+            ctx.fillRect(i*60, WORLD.floor, 60, WORLD.h - WORLD.floor);
+        }
+
+        // 背景建筑
+        ctx.globalAlpha=0.35;
+        for(let i=0;i<7;i++){
+            const x=i*150+rand(-20,20), y=260+rand(-10,10), w=120+rand(-10,40), h=140+rand(-20,30);
+            ctx.fillStyle = '#0e1a3a'; ctx.fillRect(x,y,w,h);
+        }
+        ctx.restore();
+    }
+
+    function drawFighter(f){
+        ctx.save();
+        // 阴影
+        ctx.globalAlpha=0.25; ctx.beginPath(); ctx.ellipse(f.centerX, WORLD.floor+6, 30, 9, 0, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+
+        ctx.translate(f.centerX, f.y+f.h);
+        ctx.scale(f.dir, 1);
+
+        // 身体（简单几何做成卡通）
+        const base = f.color;
+        ctx.fillStyle = base;
+        // 躯干
+        ctx.fillRect(-18, -f.h, 36, 56);
+        // 头
+        ctx.fillStyle = '#f2d7b6'; ctx.fillRect(-12, -f.h-18, 24, 18);
+        // 腿
+        ctx.fillStyle = base; ctx.fillRect(-18, -28, 16, 28); ctx.fillRect(2, -28, 16, 28);
+        // 手
+        ctx.fillStyle = base; ctx.fillRect(18, -60, 18, 14); // 右臂（前）
+
+        // 状态装饰
+        if(f.state==='light' || f.state==='heavy'){
+            ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(36, -60, 20, 10);
+        }
+
+        // 防御提示
+        if(f.block){ ctx.strokeStyle = '#a1ffef'; ctx.lineWidth=2; ctx.strokeRect(-22, -f.h-22, 44, f.h+24); }
+
+        // Combo 文本
+        if(f.comboTimer>0 && f.combo>=2){ ctx.save(); ctx.scale(1/f.dir,1); ctx.fillStyle='#fff'; ctx.font='bold 18px system-ui'; ctx.fillText(f.combo+' HIT', -18, -f.h-30); ctx.restore(); }
+
+        ctx.restore();
+    }
+
+    function drawProjectiles(){
+        for(const p of game.projectiles){
+            ctx.save();
+            ctx.shadowColor = '#7fffd4'; ctx.shadowBlur = 16;
+            ctx.fillStyle = '#aef9ff';
+            ctx.beginPath(); ctx.roundRect(p.x, p.y, p.w, p.h, 6); ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    function drawSparks(){
+        for(const s of game.sparks){
+            ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle='rgba(255,255,255,.9)'; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill(); ctx.restore();
+        }
+    }
+
+    // ===================== 回合/计时 =====================
+    function updateTimer(dt){
+        if(game.pause) return;
+        game.roundTime -= dt * game.slow;
+        if(game.roundTime < 0) game.roundTime = 0;
+        ui.timer.textContent = String(Math.floor(game.roundTime)).padStart(2,'0');
+    }
+
+    // ===================== 主循环 =====================
+    let last = performance.now();
+    let p1, p2; game.reset();
+
+    function step(now){
+        const rawDt = (now - last)/1000; last = now; const dt = Math.min(rawDt, 0.033) * (game.pause?0: (game.slow>0? game.slow : 1));
+        game.t += dt;
+
+        // 更新
+        p1.update(p1, p2, game, dt);
+        p2.update(p2, p1, game, dt);
+
+        // 投射物
+        for(const p of game.projectiles){ p.x += p.vx; p.life--; const victim = p.owner===p1?p2:p1; if(rectOverlap(p, victim.hurtbox)){
+            victim.takeHit({dmg:10, kbX:6*(p.owner.dir), kbY:4}, false); game.spark(p.x+p.w/2, p.y+p.h/2); p.life=0; game.shake=8; }
+        }
+        for(let i=game.projectiles.length-1;i>=0;i--) if(game.projectiles[i].life<=0 || game.projectiles[i].x<-40 || game.projectiles[i].x>WORLD.w+40) game.projectiles.splice(i,1);
+
+        processHits(p1, p2, game);
+
+        // HUD
+        ui.hp1.style.width = (100*p1.hp/p1.maxhp)+'%';
+        ui.hp2.style.width = (100*p2.hp/p2.maxhp)+'%';
+
+        updateTimer(dt);
+
+        // 判定回合结束
+        if((p1.state==='ko' || p2.state==='ko' || game.roundTime<=0) && !game.pause){
+            game.pause = true; showToast((p1.hp===p2.hp)?'时间到，平局！':(p1.hp>p2.hp?'你获胜！':'CPU 获胜！'), 1800);
+        }
+
+        // 渲染
+        const shakeX = game.shake>0 ? rand(-game.shake, game.shake) : 0;
+        const shakeY = game.shake>0 ? rand(-game.shake, game.shake) : 0;
+        if(game.shake>0) game.shake *= 0.88;
+
+        ctx.save(); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.translate(shakeX, shakeY);
+        drawGround();
+        drawProjectiles();
+        drawFighter(p1); drawFighter(p2);
+
+        // 火花更新
+        for(const s of game.sparks){ s.r += 0.8; s.life--; }
+        for(let i=game.sparks.length-1;i>=0;i--) if(game.sparks[i].life<=0) game.sparks.splice(i,1);
+
+        drawSparks();
+        ctx.restore();
+
+        requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+
+    // ===================== UI 交互 =====================
+    document.getElementById('btnPause').onclick = () => { game.pause = !game.pause; showToast(game.pause?'已暂停':'继续'); };
+    document.getElementById('btnReset').onclick = () => { game.reset(); };
+    document.getElementById('btnSlow').onclick = () => { game.slow = game.slow===1? 0.25 : 1; showToast(game.slow===1?'速度：正常':'速度：子弹时间'); };
+
+    // 自适应 DPR，提高清晰度
+    function fixDPR(){ const dpr = Math.min(devicePixelRatio||1, 2); const rect = canvas.getBoundingClientRect(); canvas.width = Math.round(rect.width*dpr); canvas.height = Math.round(rect.height*dpr); ctx.setTransform(dpr,0,0,dpr,0,0); }
+    addEventListener('resize', fixDPR); setTimeout(fixDPR, 0);
+
+    // 可选：手柄支持（按任意键连接）
+    window.addEventListener('gamepadconnected', () => showToast('已连接手柄'));
+
+</script>
+</body>
+</html>

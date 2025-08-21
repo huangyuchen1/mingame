@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>2D 横板拳王</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="wrap">
+    <canvas id="game" width="960" height="540"></canvas>
+    <div class="hud">
+        <div class="row">
+            <div class="tag">P1</div>
+            <div class="bar" style="margin-right:8px"><div id="hp1" class="fill"></div></div>
+            <div class="tag" id="timer">99</div>
+            <div class="bar bad" style="margin-left:8px"><div id="hp2" class="fill"></div></div>
+            <div class="tag">CPU</div>
+        </div>
+    </div>
+</div>
+
+
+<div class="controls">
+    <div class="btns">
+        <button id="btnPause">暂停 / 继续</button>
+        <button id="btnReset">重新开始</button>
+        <button id="btnSlow">子弹时间</button>
+    </div>
+    <p>
+        操作：<kbd>A</kbd>/<kbd>D</kbd> 移动，<kbd>W</kbd> 跳，<kbd>S</kbd> 下蹲；
+        <kbd>Shift</kbd> 防御；<kbd>J</kbd> 轻拳，<kbd>K</kbd> 重脚，<kbd>L</kbd> 必杀。
+    </p>
+</div>
+
+
+<div id="toast" class="toast" style="display:none">准备，FIGHT!</div>
+
+
+<!-- 脚本按模块加载 -->
+<script src="js/input.js"></script>
+<script src="js/fighter.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/hitbox.js"></script>
+<script src="js/render.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
