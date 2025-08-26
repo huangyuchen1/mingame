@@ -7,6 +7,7 @@ import { particles, updateParticles, drawParticles } from "../entities/particle.
 import { drawBackground, updateBackground } from "./background.js";
 import { drawHUD } from "../ui/hud.js";
 import { checkCollision } from "./collision.js";
+import { playShootSound, playExplosionSound, playPowerupSound, playHitSound, playGameOverSound } from "./audio.js";
 
 export let canvas, ctx;
 export let player;
@@ -14,8 +15,11 @@ export let enemies = [];
 export let boss = null;
 export let score = 0;
 export let gameOver = false;
+export let gamePaused = false;
+export let gameStarted = false;
 export let timeElapsed = 0;
 export let powerUps = [];
+export let animationId = null;
 
 export function initGame() {
     canvas = document.getElementById("gameCanvas");
@@ -31,53 +35,131 @@ export function initGame() {
     powerUps.length = 0;
     score = 0;
     gameOver = false;
+    gamePaused = false;
+    gameStarted = false;
     timeElapsed = 0;
+    
+    // 取消之前的动画循环
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+    }
+}
+
+export function startGame() {
+    gameStarted = true;
+    gameLoop();
 }
 
 export function gameLoop() {
-    if (!gameOver) {
+    if (!gameStarted) {
+        drawStartScreen();
+        return;
+    }
+    
+    if (!gameOver && !gamePaused) {
         updateBackground();
         update();
         draw();
-        requestAnimationFrame(gameLoop);
+        animationId = requestAnimationFrame(gameLoop);
+    } else if (gamePaused) {
+        drawPauseScreen();
+        animationId = requestAnimationFrame(gameLoop);
     } else {
-        ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawGameOverScreen();
+    }
+}
 
-        ctx.fillStyle = "white";
-        ctx.textAlign = "center";
+function drawStartScreen() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawBackground();
+    
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = "white";
+    ctx.textAlign = "center";
+    
+    ctx.font = "bold 48px Arial";
+    ctx.fillText("🚀 太空射击游戏 🚀", canvas.width / 2, canvas.height / 2 - 100);
+    
+    ctx.font = "24px Arial";
+    ctx.fillText("使用 WASD 键控制飞船", canvas.width / 2, canvas.height / 2 - 30);
+    ctx.fillText("按空格键开始游戏", canvas.width / 2, canvas.height / 2 + 10);
+    ctx.fillText("按 P 键暂停游戏", canvas.width / 2, canvas.height / 2 + 40);
+    
+    ctx.font = "18px Arial";
+    ctx.fillText("消灭敌人获得分数，击败Boss获得更高奖励！", canvas.width / 2, canvas.height / 2 + 80);
+    
+    animationId = requestAnimationFrame(gameLoop);
+}
 
-        ctx.font = "48px Arial";
-        ctx.fillText("💀 游戏失败 💀", canvas.width / 2, canvas.height / 2 - 100);
+function drawPauseScreen() {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = "white";
+    ctx.textAlign = "center";
+    
+    ctx.font = "bold 36px Arial";
+    ctx.fillText("⏸️ 游戏暂停 ⏸️", canvas.width / 2, canvas.height / 2 - 50);
+    
+    ctx.font = "24px Arial";
+    ctx.fillText("按 P 键继续游戏", canvas.width / 2, canvas.height / 2);
+    ctx.fillText("按 R 键重新开始", canvas.width / 2, canvas.height / 2 + 40);
+}
 
-        ctx.font = "28px Arial";
-        ctx.fillText(`最终得分: ${score}`, canvas.width / 2, canvas.height / 2 - 30);
-        ctx.fillText(`生存时间: ${timeElapsed.toFixed(1)} 秒`, canvas.width / 2, canvas.height / 2 + 10);
-
-        ctx.font = "24px Arial";
-        ctx.fillText("按 R 键重新开始", canvas.width / 2, canvas.height / 2 + 60);    }
+function drawGameOverScreen() {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.fillStyle = "white";
+    ctx.textAlign = "center";
+    
+    ctx.font = "bold 48px Arial";
+    ctx.fillText("💀 游戏失败 💀", canvas.width / 2, canvas.height / 2 - 100);
+    
+    ctx.font = "28px Arial";
+    ctx.fillText(`最终得分: ${score}`, canvas.width / 2, canvas.height / 2 - 30);
+    ctx.fillText(`生存时间: ${timeElapsed.toFixed(1)} 秒`, canvas.width / 2, canvas.height / 2 + 10);
+    
+    ctx.font = "24px Arial";
+    ctx.fillText("按 R 键重新开始", canvas.width / 2, canvas.height / 2 + 60);
+    ctx.fillText("按空格键返回主菜单", canvas.width / 2, canvas.height / 2 + 100);
 }
 
 function update() {
     timeElapsed += 1 / 60;
-
-    if (!boss && score >= 30) {
+    
+    // 根据分数调整难度
+    const difficulty = Math.min(score / 50 + 1, 3);
+    
+    // Boss出现条件：分数达到50且没有Boss
+    if (!boss && score >= 50) {
         boss = new Boss();
         enemies.length = 0;
     }
-
+    
+    // 根据难度调整敌人生成频率
+    if (!boss && Math.random() < 0.01 * difficulty) {
+        enemies.push(new Enemy());
+    }
+    
     player.move();
+    player.update();
     player.autoShoot();
-
+    
     updateBullets();
     updateParticles();
-
-    if (!boss && Math.random() < 0.02) enemies.push(new Enemy());
-
+    
+    // 更新敌人
     enemies.forEach((enemy, ei) => {
         enemy.move();
-        if (enemy.y > canvas.height) enemies.splice(ei, 1);
-
+        if (enemy.y > canvas.height) {
+            enemies.splice(ei, 1);
+            // 敌人逃脱扣分
+            score = Math.max(0, score - 1);
+        }
+        
         bullets.forEach((bullet, bi) => {
             if (checkCollision(bullet, enemy)) {
                 enemy.hp -= 1;
@@ -86,18 +168,25 @@ function update() {
                     enemy.onDestroy();
                     enemies.splice(ei, 1);
                     score++;
-                    if (Math.random() < 0.1) powerUps.push(new PowerUp(enemy.x, enemy.y));
+                    player.addCombo();
+                    playExplosionSound();
+                    if (Math.random() < 0.15) powerUps.push(new PowerUp(enemy.x, enemy.y));
                 }
             }
         });
-
+        
         if (checkCollision(player, enemy)) {
-            player.hp -= 10;
+            player.takeDamage(10);
             enemies.splice(ei, 1);
-            if (player.hp <= 0) gameOver = true;
+            playHitSound();
+            if (player.hp <= 0) {
+                gameOver = true;
+                playGameOverSound();
+            }
         }
     });
-    //boss游戏逻辑
+    
+    // Boss游戏逻辑
     if (boss) {
         boss.update();
         bullets.forEach((bullet, bi) => {
@@ -106,26 +195,35 @@ function update() {
                 bullets.splice(bi, 1);
                 if (boss.hp <= 0) {
                     boss.onDestroy();
-                    score += 10;
+                    score += 20; // 增加Boss奖励分数
                     powerUps.push(new PowerUp(boss.x, boss.y));
                     boss = null;
                 }
             }
         });
+        
         boss.bullets.forEach((b, i) => {
             b.move();
             if (boss && checkCollision(player, b)) {
-                player.hp -= 20;
+                player.takeDamage(20);
                 boss.bullets.splice(i, 1);
-                if (player.hp <= 0) gameOver = true;
+                playHitSound();
+                if (player.hp <= 0) {
+                    gameOver = true;
+                    playGameOverSound();
+                }
             }
         });
     }
-
+    
+    // 更新道具
     powerUps.forEach((p, pi) => {
         p.move();
-        if (checkCollision(player, p)) {
-            player.upgradeWeapon();
+        if (p.y > canvas.height) {
+            powerUps.splice(pi, 1);
+        } else if (checkCollision(player, p)) {
+            p.applyEffect();
+            playPowerupSound();
             powerUps.splice(pi, 1);
         }
     });
@@ -134,7 +232,7 @@ function update() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawBackground();
-
+    
     player.draw();
     drawBullets();
     enemies.forEach(e => e.draw());
@@ -144,6 +242,6 @@ function draw() {
     }
     drawParticles();
     powerUps.forEach(p => p.draw());
-
+    
     drawHUD(score, timeElapsed, player.hp);
 }
